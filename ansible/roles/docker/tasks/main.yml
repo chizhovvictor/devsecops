@@ -1,0 +1,53 @@
+---
+# tasks file for roles/docker
+
+- name: Update cache of packages
+  apt:
+    update_cache: yes
+
+- name: Install dependenses
+  apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+      - net-tools
+    state: present
+
+- name: Add official GPG Docker
+  ansible.builtin.shell: |
+    install -m 0755 -d /etc/apt/keyrings
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo tee /etc/apt/keyrings/docker.asc > /dev/null
+    chmod a+r /etc/apt/keyrings/docker.asc
+
+- name: Add repository Docker
+  ansible.builtin.shell: |
+    echo "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+- name: Update cache of packages after adding repository
+  apt:
+    update_cache: yes
+
+- name: Install Docker and Docker Compose
+  apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+
+- name: Run Docker
+  systemd:
+    name: docker
+    enabled: yes
+    state: started
+  notify: Restart Docker
+
+- name: Add user in Docker group
+  user:
+    name: "{{ ansible_user }}"
+    groups: docker
+    append: yes
+

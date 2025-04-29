@@ -1,0 +1,15 @@
+---
+# tasks file for roles/tls
+
+- name: Install Certbot
+  command: snap install --classic certbot
+
+- name: Create symlink for certbot
+  command: ln -s /snap/bin/certbot /usr/bin/certbot
+  args:
+    creates: /usr/bin/certbot
+
+- name: Configure Cerbot
+  command: certbot certonly --standalone
+
+

@@ -1,0 +1,10 @@
+[Unit]
+Description=Lightweight Kubernetes
+After=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/k3s server --node-ip={{ k3s_node_ip }} {{ k3s_server_args }}
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

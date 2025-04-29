@@ -1,0 +1,4 @@
+---
+# tasks file for roles/ping
+- name: Ping all hosts
+  ping:

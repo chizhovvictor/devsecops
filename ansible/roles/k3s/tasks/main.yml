@@ -1,0 +1,10 @@
+---
+# tasks file for ./roles/k3s
+- name: Install K3s
+  include_tasks: install.yml
+
+- name: Configure K3s
+  include_tasks: configure.yml
+
+- name: Start K3s
+  include_tasks: start.yml

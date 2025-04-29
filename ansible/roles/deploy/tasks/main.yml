@@ -1,0 +1,17 @@
+---
+- name: Убедиться, что git установлен
+  package:
+    name: git
+    state: present
+
+- name: Клонировать репозиторий yc-courses-ru-devsecops
+  git:
+    repo: https://github.com/yandex-cloud-examples/yc-courses-ru-devsecops
+    dest: /opt/yc-courses-ru-devsecops
+    version: HEAD
+    update: no
+
+- name: Построить docker compose
+  command: docker compose up -d
+  args:
+    chdir: /opt/yc-courses-ru-devsecops

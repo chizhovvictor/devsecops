@@ -1,0 +1,5 @@
+- name: Install K3s
+  shell: "curl -sfL {{ k3s_install_url }} | sh -s - {{ k3s_server_args }}"
+  args:
+    creates: /usr/local/bin/k3s
+  become: true
