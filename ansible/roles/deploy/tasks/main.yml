@@ -11,7 +11,50 @@
     version: HEAD
     update: no
 
+- name: Создать директорию для сертификатов
+  file:
+    path: /opt/yc-courses-ru-devsecops/certs
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  tags:
+    - mkdir_certs
+
+
+- name: Скачать mkcert
+  get_url:
+    url: https://dl.filippo.io/mkcert/latest?for=linux/amd64
+    dest: /opt/yc-courses-ru-devsecops/certs/mkcert
+    mode: '0755'
+  tags:
+    - download_mkcert
+  
+
+- name: Переместить mkcert в /usr/local/bin
+  command: mv /opt/yc-courses-ru-devsecops/certs/mkcert /usr/local/bin/
+  tags:
+    - copy_mkcert
+
+- name: Сгенерировать корневой сертификат
+  command: mkcert -install
+  tags:
+    - generate_root_cert
+
+- name: Сгенерировать сертификаты для доменов
+  command: mkcert -cert-file cert.pem -key-file key.pem '*.yc-courses-ru-devsecops'
+  args:
+    chdir: /opt/yc-courses-ru-devsecops/certs
+  tags:
+    - generate_domain_certs
+
+
+
+
+
 - name: Построить docker compose
   command: docker compose up -d
   args:
     chdir: /opt/yc-courses-ru-devsecops
+
+
