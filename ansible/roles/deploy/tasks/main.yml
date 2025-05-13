@@ -42,14 +42,14 @@
     - generate_root_cert
 
 - name: Сгенерировать сертификаты для доменов
-  command: mkcert -cert-file cert.pem -key-file key.pem '*.yc-courses-ru-devsecops'
+  command: mkcert -cert-file cert.pem -key-file key.pem {{ ansible_host }} 
   args:
     chdir: /opt/yc-courses-ru-devsecops/certs
   tags:
     - generate_domain_certs
 
 
-
+- 
 
 
 - name: Построить docker compose

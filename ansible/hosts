@@ -1,2 +1,2 @@
-[devsecops]
-devsecops ansible_host=134.122.10.111
+[cloud-1]
+devsecops ansible_host=104.131.55.132
