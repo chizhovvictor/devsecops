@@ -23,7 +23,7 @@ resource "digitalocean_project" "devsecops" {
 resource "digitalocean_kubernetes_cluster" "k8s" {
   name    = "devsecops"
   region  = "nyc3"
-  version = "1.32.5-do.3"
+  version = "1.32.2-do.1"
 
   # vpc_uuid = digitalocean_vpc.devsecops_vpc.id
 
