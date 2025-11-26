@@ -1,6 +1,6 @@
 imagePullPolicy: IfNotPresent
 gitlabUrl: "https://gitlab.com/"
-runnerRegistrationToken: <TOKEN>
+runnerRegistrationToken: GR1348941fzmAnBaKjojiwGbPq5Pq
 terminationGracePeriodSeconds: 3600
 concurrent: 10
 checkInterval: 30

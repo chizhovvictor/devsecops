@@ -23,7 +23,7 @@ resource "digitalocean_project" "devsecops" {
 resource "digitalocean_kubernetes_cluster" "k8s" {
   name    = "devsecops"
   region  = "nyc3"
-  version = "1.32.5-do.3"
+  version = "1.34.1-do.0"
 
   # vpc_uuid = digitalocean_vpc.devsecops_vpc.id
 
@@ -31,7 +31,7 @@ resource "digitalocean_kubernetes_cluster" "k8s" {
 
   node_pool {
     name       = "default-pool"
-    size       = "s-4vcpu-8gb"
+    size       = "s-4vcpu-16gb-amd"
     node_count = 1
 
     tags       = ["k8s-node"]
@@ -43,12 +43,12 @@ resource "digitalocean_kubernetes_cluster" "k8s" {
 }
 
 # 4. Привязка кластера к проекту (обязательно зависит от кластера и проекта)
-# resource "digitalocean_project_resources" "attach_cluster" {
-#   project = digitalocean_project.devsecops.id
-#   resources = [
-#     digitalocean_kubernetes_cluster.k8s.urn,
-#   ]
-# }
+resource "digitalocean_project_resources" "attach_cluster" {
+  project = digitalocean_project.devsecops.id
+  resources = [
+    digitalocean_kubernetes_cluster.k8s.urn,
+  ]
+}
 
 # 5. Container Registry (опционально можно тоже привязать к проекту, но пока без этого)
 # resource "digitalocean_container_registry" "default" {
