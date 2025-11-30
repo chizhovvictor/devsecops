@@ -1,0 +1,41 @@
+version: '3' 
+services:
+  mariadb:
+    image: mariadb
+    restart: always
+    env_file:
+      - ".env"
+    environment:
+      - MARIADB_DATABASE=${DATABASE_NAME}
+      - MARIADB_ROOT_PASSWORD=root
+      - MARIADB_USER=${DATABASE_USER}
+      - MARIADB_PASSWORD=${DATABASE_PASSWORD}
+    ports:
+      - "3306:3306"
+    volumes:
+      - app:/var/lib/mysql
+    networks:
+      - app
+
+  www:
+    build:
+      dockerfile: ./Dockerfile.local
+      context: ./
+    image: www
+    env_file:
+      - ".env"
+    ports:
+      - "8000:80"
+    depends_on:
+      - mariadb
+    networks:
+      - app
+    volumes:
+      - ./api:/app
+
+volumes:
+  app:
+ 
+networks: 
+  app: 
+    driver: bridge

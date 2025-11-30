@@ -18,8 +18,30 @@ helm install ingress-nginx ingress-nginx/ingress-nginx
 echo "Create namespace for finenomore"
 kubectl create namespace finenomore
 
+# 5. создание секрета для доступа к gitlab container registry (это пункт 3)
+echo "Create secret for gitlab credentials"
+kubectl create secret docker-registry gitlab-credentials --docker-server=registry.gitlab.com --docker-username=chizhovvictor --docker-password=<ACCESS TOKEN> --docker-email=test@test.com -n finenomore
+
+#3-1 установка argo cd для деплоя приложения finenomore
+echo "Create namespace for argocd"
+kubectl create namespace argocd
+
+echo "Install argocd"
+helm repo add argo https://argoproj.github.io/argo-helm
+helm repo update
+helm install argocd argo/argo-cd --namespace argocd
+
+echo "Get argocd initial admin password"
+kubectl get secret argocd-initial-admin-secret -n argocd -o jsonpath="{.data.password}" | base64 -d
+
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+
 echo "install finenomore app"
 helm install finenomore my_project/k8s/finenomore 
+
+# 3-2 создание проекта и приложения для finenomore
+php bin/migration up
+php bin/fixture up
 
 # 4. установка gitlab-runner через helm в кластер
 echo "Add helm repo for gitlab-runner"
@@ -27,10 +49,6 @@ helm repo add gitlab https://charts.gitlab.io
 
 echo "Install gitlab-runner"
 helm install --namespace default gitlab-runner -f scripts/runners/values.yaml gitlab/gitlab-runner
-
-# 5. создание секрета для доступа к gitlab container registry (это пункт 3)
-echo "Create secret for gitlab credentials"
-kubectl create secret docker-registry gitlab-credentials --docker-server=registry.gitlab.com --docker-username=chizhovvictor --docker-password=<ACCESS TOKEN> --docker-email=test@test.com -n finenomore
 
 # 6. установка gitlab-agent в кластер для автоматического подключения к gitlab
 echo "Create gitlab agent in kubernetes"
@@ -71,4 +89,6 @@ echo "DefectDojo admin password: $(kubectl \
 
 
 
-defectdojo.159.89.241.129.sslip.io
+kubectl delete secrets defectdojo defectdojo-redis-specific defectdojo-postgresql-specific
+kubectl delete serviceAccount defectdojo
+kubectl delete pvc redis-data-defectdojo-redis-master-0 data-defectdojo-postgresql-0

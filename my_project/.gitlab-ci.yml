@@ -1,0 +1,305 @@
+# variables:
+#   IMAGE_NAME: "${CI_REGISTRY_IMAGE}/${CI_COMMIT_REF_SLUG}:${CI_COMMIT_SHA}"
+#   GITLAB_AGENT: "$CI_PROJECT_PATH:finenomore-gitlab-agent"
+
+# kaniko-build:
+#   image:
+#     name: gcr.io/kaniko-project/executor:v1.9.0-debug
+#     entrypoint: [""]
+#   stage: build
+#   script:
+#     - /kaniko/executor
+#       --context "${CI_PROJECT_DIR}"
+#       --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
+#       --destination "${IMAGE_NAME}"
+#   rules:
+#     - if: $CI_COMMIT_BRANCH
+#       exists:
+#         - Dockerfile
+
+# deploy_app:
+#   image: dtzar/helm-kubectl:3.9
+#   stage: deploy
+#   script:
+#     - kubectl config use-context $GITLAB_AGENT
+#     - cd k8s/finenomore
+#     - helm upgrade --install finenomore . --set finenomore.image=${IMAGE_NAME} --set finenomore.imagePullSecrets=gitlab-credentials #--atomic
+ 
+
+# GitLab Secret Detection
+# GitLab SAST
+# GitLab Container Scanning
+include:
+  - template: Security/Secret-Detection.gitlab-ci.yml
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Security/Container-Scanning.gitlab-ci.yml 
+
+stages:
+  - report-prepare
+  - pre-build
+  - build
+  - post-build
+  - test
+  - report
+  - deploy
+
+variables:
+  IMAGE_NAME: "${CI_REGISTRY_IMAGE}/${CI_COMMIT_REF_SLUG}:${CI_COMMIT_SHA}"
+  GITLAB_AGENT: "$CI_PROJECT_PATH:finenomore-gitlab-agent"
+  DAST_NAME: finenomore-dast
+  DEFECTDOJO_SCAN_MINIMUM_SEVERITY: "Info"
+  DEFECTDOJO_SCAN_CLOSE_OLD_FINDINGS: "true"
+  DEFECTDOJO_SCAN_ENVIRONMENT: "Default"
+
+# print:
+#   stage: print
+#   script:
+#     - echo "Registry image $CI_REGISTRY_IMAGE"
+#     - echo "Commit slug $CI_COMMIT_REF_SLUG"
+#     - echo "Commit sha $CI_COMMIT_SHA"
+#     - echo "GITLAB_AGENT $CI_PROJECT_PATH:test"
+#     - echo "IMAGE_NAME ${CI_REGISTRY_IMAGE}/${CI_COMMIT_REF_SLUG}:${CI_COMMIT_SHA}"
+#     - echo "CI_PROJECT_DIR $CI_PROJECT_DIR"
+
+# Prepare data for defectdojo
+defectdojo_create_engagement:
+  stage: report-prepare
+  image:
+    name: alpine
+  variables:
+    GIT_STRATEGY: none
+    DEFECTDOJO_ENGAGEMENT_PERIOD: 7
+    DEFECTDOJO_ENGAGEMENT_STATUS: "Not Started"
+    DEFECTDOJO_ENGAGEMENT_BUILD_SERVER: "null"
+    DEFECTDOJO_ENGAGEMENT_SOURCE_CODE_MANAGEMENT_SERVER: "null"
+    DEFECTDOJO_ENGAGEMENT_ORCHESTRATION_ENGINE: "null"
+    DEFECTDOJO_ENGAGEMENT_DEDUPLICATION_ON_ENGAGEMENT: "false"
+    DEFECTDOJO_ENGAGEMENT_THREAT_MODEL: "true"
+    DEFECTDOJO_ENGAGEMENT_API_TEST: "true"
+    DEFECTDOJO_ENGAGEMENT_PEN_TEST: "true"
+    DEFECTDOJO_ENGAGEMENT_CHECK_LIST: "true"
+  before_script:
+    - apk add curl jq coreutils
+    - TODAY=`date +%Y-%m-%d`
+    - ENDDAY=$(date -d "+${DEFECTDOJO_ENGAGEMENT_PERIOD} days" +%Y-%m-%d)
+  script:
+    - |
+        ENGAGEMENTID=`curl --insecure --fail --location --request POST "${DEFECTDOJO_URL}/engagements/" \
+              --header "Authorization: Token ${DEFECTDOJO_TOKEN}" \
+              --header 'Content-Type: application/json' \
+                --data-raw "{
+                  \"tags\": [\"GITLAB-CI\"],
+                  \"name\": \"${CI_COMMIT_REF_NAME}#${CI_PIPELINE_ID}\",
+                  \"description\": \"${CI_COMMIT_DESCRIPTION}\",
+                  \"version\": \"${CI_COMMIT_REF_NAME}\",
+                  \"first_contacted\": \"${TODAY}\",
+                  \"target_start\": \"${TODAY}\",
+                  \"target_end\": \"${ENDDAY}\",
+                  \"reason\": \"string\",
+                  \"tracker\": \"${CI_PROJECT_URL}/-/issues\",
+                  \"threat_model\": \"${DEFECTDOJO_ENGAGEMENT_THREAT_MODEL}\",
+                  \"api_test\": \"${DEFECTDOJO_ENGAGEMENT_API_TEST}\",
+                  \"pen_test\": \"${DEFECTDOJO_ENGAGEMENT_PEN_TEST}\",
+                  \"check_list\": \"${DEFECTDOJO_ENGAGEMENT_CHECK_LIST}\",
+                  \"status\": \"${DEFECTDOJO_ENGAGEMENT_STATUS}\",
+                  \"engagement_type\": \"CI/CD\",
+                  \"build_id\": \"${CI_PIPELINE_ID}\",
+                  \"commit_hash\": \"${CI_COMMIT_SHORT_SHA}\",
+                  \"branch_tag\": \"${CI_COMMIT_REF_NAME}\",
+                  \"deduplication_on_engagement\": \"${DEFECTDOJO_ENGAGEMENT_DEDUPLICATION_ON_ENGAGEMENT}\",
+                  \"product\": \"${DEFECTDOJO_PRODUCTID}\",
+                  \"source_code_management_uri\": \"${CI_PROJECT_URL}\",
+                  \"build_server\": ${DEFECTDOJO_ENGAGEMENT_BUILD_SERVER},
+                  \"source_code_management_server\": ${DEFECTDOJO_ENGAGEMENT_SOURCE_CODE_MANAGEMENT_SERVER},
+                  \"orchestration_engine\": ${DEFECTDOJO_ENGAGEMENT_ORCHESTRATION_ENGINE}
+                }" | jq -r '.id'`
+    - echo "DEFECTDOJO_ENGAGEMENTID=${ENGAGEMENTID}" >> defectdojo.env
+  artifacts:
+    reports:
+      dotenv: defectdojo.env 
+
+.deploy:
+  image: dtzar/helm-kubectl:3.9
+  before_script:
+    - kubectl config use-context $GITLAB_AGENT
+
+# Чтобы GitLab Secret Detection работал и для более ранних коммитов
+secret_detection:
+  stage: pre-build
+  variables:
+    SECRET_DETECTION_HISTORIC_SCAN: "true"
+    GIT_STRATEGY: "clone"
+  allow_failure: true
+  script:
+    - apk add jq
+    - /analyzer run
+    - exit $(eval "cat gl-secret-detection-report.json | jq --raw-output '.vulnerabilities | length'")
+  artifacts:
+    when: always
+    paths:
+      - gl-secret-detection-report.json 
+
+#SAST
+sast:
+  stage: pre-build
+  variables:
+    SCAN_KUBERNETES_MANIFESTS: "true"
+    KUBESEC_HELM_CHARTS_PATH: "./manifests/k8s/finenomore"
+    SAST_EXCLUDED_ANALYZERS: "bandit,gosec,eslint"
+  before_script:
+    - git clone https://oauth2:${ARGOCD_PRIVATE_TOKEN}@gitlab.com/chizhovvictor/argocdproject.git manifests
+  artifacts:
+    paths:
+      - ${CI_JOB_NAME}.json
+  after_script:
+    - mv gl-sast-report.json ${CI_JOB_NAME}.json 
+
+# SCA Source
+trivy-sca:
+  stage: pre-build
+  image:
+    name: aquasec/trivy:0.34.0
+    entrypoint: [""]
+  script:
+    - trivy fs -f json --output trivy-sca.json .
+  artifacts:
+    paths:
+      - trivy-sca.json 
+
+# build kaniko image and push at IMAGE_NAME
+kaniko-build:
+  image:
+    name: gcr.io/kaniko-project/executor:v1.9.0-debug
+    entrypoint: [""]
+  stage: build
+  script:
+    - /kaniko/executor
+      --context "${CI_PROJECT_DIR}"
+      --dockerfile "${CI_PROJECT_DIR}/Dockerfile"
+      --destination "${IMAGE_NAME}"
+  rules:
+    - if: $CI_COMMIT_BRANCH
+      exists:
+        - Dockerfile
+
+
+# SCA Bianary 
+container_scanning:
+  stage: post-build
+
+# deploy kaniko image at test namespace for dast scan
+dast-prepare:
+  extends: .deploy
+  stage: test
+  script:
+    - LB_ADDRESS=$(kubectl get services ingress-nginx-controller --output jsonpath='{.status.loadBalancer.ingress[0].ip}')
+    - APP_HOST=finenomore-dast.$LB_ADDRESS.sslip.io
+    - git clone https://oauth2:${ARGOCD_PRIVATE_TOKEN}@gitlab.com/chizhovvictor/argocdproject.git manifests
+    - helm upgrade --install $DAST_NAME ./manifests/k8s/finenomore
+      --set namespace=$DAST_NAME
+      --set finenomore.image=$IMAGE_NAME
+      --set finenomore.imagePullSecrets=gitlab-credentials --atomic
+      --set finenomore.ingress.host=$APP_HOST
+    - echo "APP_ADDRESS is $APP_HOST"
+    - echo "APP_ADDRESS=$APP_HOST" >> app.env
+  artifacts:
+    reports:
+      dotenv: app.env
+
+# dast scan
+dast-scan:
+  stage: test
+  needs: ["dast-prepare"]
+  image:
+    name: zaproxy/zap-stable:2.15.0
+  script:
+    - mkdir -p /zap/wrk
+    - zap-full-scan.py -t "http://${APP_ADDRESS}" -I -J zap.json
+    - cp /zap/wrk/zap.json .
+  artifacts:
+    when: always
+    paths:
+      - zap.xml
+
+# destroy dast pods
+dast-destroy:
+  extends: .deploy
+  stage: test
+  needs: ["dast-scan"]
+  script:
+    - helm uninstall $DAST_NAME 
+
+# Push data at defectdojo
+.defectdojo_publish:
+  stage: report
+  image: alpine
+  allow_failure: true
+  before_script:
+    - apk add curl coreutils
+    - TODAY=`date +%Y-%m-%d`
+  script:
+    - |
+        curl --insecure --fail --location --request POST "${DEFECTDOJO_URL}/import-scan/" \
+            --header "Authorization: Token ${DEFECTDOJO_TOKEN}" \
+            --form "scan_date=\"${TODAY}\"" \
+            --form "minimum_severity=\"${DEFECTDOJO_SCAN_MINIMUM_SEVERITY}\"" \
+            --form "scan_type=\"${DEFECTDOJO_SCAN_TYPE}\"" \
+            --form "engagement=\"${DEFECTDOJO_ENGAGEMENTID}\"" \
+            --form "file=@${DEFECTDOJO_SCAN_FILE}" \
+            --form "close_old_findings=\"${DEFECTDOJO_SCAN_CLOSE_OLD_FINDINGS}\"" \
+            --form "environment=\"${DEFECTDOJO_SCAN_ENVIRONMENT}\"" 
+
+dd_secret_detection:
+  extends: .defectdojo_publish
+  needs: ["defectdojo_create_engagement", "secret_detection"]
+  variables:
+    DEFECTDOJO_SCAN_FILE: gl-secret-detection-report.json
+    DEFECTDOJO_SCAN_TYPE: "GitLab Secret Detection Report"
+
+dd_semgrep_sast:
+  extends: .defectdojo_publish
+  needs: ["defectdojo_create_engagement", "semgrep-sast"]
+  variables:
+    DEFECTDOJO_SCAN_FILE: semgrep-sast.json
+    DEFECTDOJO_SCAN_TYPE: "GitLab SAST Report"
+
+dd_kubesec_sast:
+  extends: .defectdojo_publish
+  needs: ["defectdojo_create_engagement", "kubesec-sast"]
+  variables:
+    DEFECTDOJO_SCAN_FILE: kubesec-sast.json
+    DEFECTDOJO_SCAN_TYPE: "GitLab SAST Report"
+
+dd_trivy:
+  extends: .defectdojo_publish
+  needs: ["defectdojo_create_engagement", "trivy-sca"]
+  variables:
+    DEFECTDOJO_SCAN_FILE: trivy-sca.json
+    DEFECTDOJO_SCAN_TYPE: "Trivy Scan" 
+
+dd_container_scanning:
+  extends: .defectdojo_publish
+  needs: ["defectdojo_create_engagement", "container_scanning"]
+  variables:
+    DEFECTDOJO_SCAN_FILE: gl-container-scanning-report.json
+    DEFECTDOJO_SCAN_TYPE: "GitLab Container Scan"
+
+dd_dast:
+  extends: .defectdojo_publish
+  needs: ["defectdojo_create_engagement", "dast-scan"]
+  variables:
+    DEFECTDOJO_SCAN_FILE: zap.xml
+    DEFECTDOJO_SCAN_TYPE: "ZAP Scan"
+
+
+# # deploy kaniko image at main cluster
+# deploy_app:
+#   extends: .deploy
+#   stage: deploy
+#   image: dtzar/helm-kubectl:3.9
+#   needs:
+#     - ["semgrep-sast", "kubesec-sast", "container_scanning", "secret_detection", "trivy-sca", "dast-scan"]
+#   script:
+#     - cd k8s/finenomore
+#     - helm upgrade --install finenomore . --set finenomore.image=${IMAGE_NAME} --set finenomore.imagePullSecrets=gitlab-credentials #--atomic
+#   when: manual

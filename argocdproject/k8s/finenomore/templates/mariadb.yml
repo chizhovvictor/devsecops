@@ -1,0 +1,99 @@
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: {{ .Values.mariadb.name }}
+  namespace: {{ default .Release.Namespace .Values.namespace | quote }}
+spec:
+  storageClassName: {{ .Values.mariadb.storageClass }}
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: {{ .Values.mariadb.storageSize }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.mariadb.name }}
+  namespace: {{ default .Release.Namespace .Values.namespace | quote }}
+data:
+  APP_BASE_URL: http://localhost:80
+  DATABASE_DRIVER: mysql
+  DATABASE_SERVER: mariadb
+  DATABASE_USER: finenomore
+  DATABASE_PASSWORD: finenomore
+  DATABASE_NAME: finenomore
+  DATABASE_CHARSET: utf8mb4
+  MARIADB_ROOT_PASSWORD: root
+  
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.mariadb.name }}
+  namespace: {{ default .Release.Namespace .Values.namespace | quote }}
+spec:
+  replicas: 1
+  selector:
+    {{- with .Values.mariadb.labels }}
+    matchLabels:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  template:
+    metadata:
+      {{- with .Values.mariadb.labels }}
+      labels:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      containers:
+        - name: {{ .Values.mariadb.name }}
+          image: {{ .Values.mariadb.image }}
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3306
+          envFrom:
+            - configMapRef:
+                name: {{ .Values.mariadb.name }}
+          volumeMounts:
+            - mountPath: /var/lib/mysql
+              name: mariadb
+            - mountPath: /docker-entrypoint-initdb.d
+              name: mariadbinit
+      volumes:
+        - name: mariadb
+          persistentVolumeClaim:
+            claimName: {{ .Values.mariadb.name }}
+        - name: mariadbinit
+          configMap:
+            name: {{ .Values.mariadb.name }}-init
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.mariadb.name }}-init
+  namespace: {{ default .Release.Namespace .Values.namespace | quote }}
+data:
+  init.sql: |
+    CREATE DATABASE IF NOT EXISTS finenomore CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+    CREATE USER IF NOT EXISTS 'finenomore'@'%' IDENTIFIED BY 'finenomore';
+    GRANT ALL PRIVILEGES ON finenomore.* TO 'finenomore'@'%';
+    FLUSH PRIVILEGES;
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.mariadb.name }}
+  namespace: {{ default .Release.Namespace .Values.namespace | quote }}
+spec:
+  type: ClusterIP
+  ports:
+   - port: 3306
+  {{- with .Values.mariadb.labels }}
+  selector:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}

@@ -1,11 +1,7 @@
-# DD image tag
-tag: 2.42.1
 createSecret: true
 createRedisSecret: true
 createPostgresqlSecret: true
-# Primary hostname of instance
-host: defectdojo.129.212.146.77.sslip.io
-# Django params
+host: defectdojo.129.212.146.218.sslip.io
 django:
   ingress:
     enabled: true
