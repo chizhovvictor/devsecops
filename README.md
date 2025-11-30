@@ -355,3 +355,64 @@ DEFECTDOJO_TOKEN	replace_with_your_gitlab-ci_user’s_api_token	Variable	Yes
 
 Изменил пайплайн на выгрузку артефактов и пуш их в наш дашбоард
 
+
+
+1) создать и настроить Product.
+
+- включить дедупликацию ( Configuration → System Settings → Deduplicate findings)
+- создать Product Type (Add Product Type: Name dev-sec-ops) 
+- создать Product (Add product)
+    Name: finenomore
+    Description: dev-sec-ops finenomore
+    Product Type: выберите dev-sec-ops
+    SLA Configuration: Default
+    Enable Simple Risk Acceptance: yes (для более простого принятия рисков)
+- получить id из урла (id: 1)
+
+
+2) создать отдельного сервисного пользователя
+
+- создать пользователя (Users → Users → New User)
+    Username: gitlab-ci
+    Password: 1234Qwer!
+    email: test@test.com
+- дать ему права (View → Products this User can access)
+    Products: our product
+    Role: Writer
+
+3) создатьй API-ключ, который будет использоваться для интеграции с GitLab.
+
+- залогиниться под юзером (API v2 Key)
+46b0644e3875525f3e3bd33951d155cafdd1a0d2
+
+4) настроить в GitLab переменные окружения с необходимыми метаданными: пользователя и API-ключ
+
+- создать CI/CD переменные окружения в GitLab (Settings → CI/CD)
+DEFECTDOJO_URL https://defectdojo.<IP>.sslip.io/api/v2	Variable	No (Masked variable)
+DEFECTDOJO_PRODUCTID	1	Variable	No
+DEFECTDOJO_TOKEN	token	Variable	Yes
+
+детальная дока по подключению https://defectdojo.<IP>.sslip.io/api/v2/doc/
+
+5) добавить шаблоны jobs для импорта результатов работы DevSecOps-анализаторов.
+
+
+git filter-branch для очистки комитов но для main нужно настроить репозитоий
+Settings → Repository → Protected → Allowed to force push
+
+
+
+
+git checkout main
+git filter-branch -f --tree-filter "sed -i.bak -e's/LTAIsupersecretkeyfordat/fakepassword/g' app/finenomore/__init__.py; rm -f app/finenomore/__init__.py.bak" HEAD
+git filter-branch -f --tree-filter "sed -i.bak -e's/LTAIsupersecretkeyfordat/fakepassword/g' k8s/finenomore/templates/postgresql.yml; rm -f k8s/finenomore/templates/postgresql.yml.bak" HEAD
+git gc --prune=now
+git push --force
+
+
+
+
+Semgrep-сканер выполняет статический анализ исходного кода приложения Проверки pre-build. SAST
+Trivy - Проверки pre-build. SCA
+
+
